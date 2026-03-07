@@ -1,6 +1,6 @@
 # 🔐 Hide - A Secure LSB Steganography tool
 
-> This is a Python program to encrypted text inside images — undetectable, authenticated, and open source.
+> This is a Python program to encrypted text inside images - undetectable, authenticated, and open source.
 > Vibe coded with the help of Claude Sonnet 4.6
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)
@@ -16,34 +16,34 @@ A desktop application for hiding text inside images using **Least Significant Bi
 ## Features
 
 ### Steganography
-- LSB embedding in RGB pixel channels — visually imperceptible
+- LSB embedding in RGB pixel channels - visually imperceptible
 - Supports PNG, JPEG, BMP, GIF, TIFF as input
 - Output always saved as **lossless PNG** to prevent compression artifacts destroying the payload
-- 4-byte length prefix in the bitstream — extract reads exactly the right number of bytes, no guessing
+- 4-byte length prefix in the bitstream - extract reads exactly the right number of bytes, no guessing
 
 ### Cryptography
-- **AES-256-GCM** authenticated encryption — confidentiality + integrity in one primitive
-- **Argon2id** key derivation (256 MB RAM · 4 iterations · 4 lanes) — GPU-resistant password hashing
-- **128-bit random salt** + **96-bit random nonce** generated fresh per operation — no two embeddings are identical even with the same password and text
-- GCM authentication tag is verified **before** any plaintext is released — corrupt or tampered images are rejected
-- All markers (start/end delimiters) are embedded **inside the ciphertext** — no structure is visible in raw image data
-- **Uniform error messages** across all failure paths — no cryptographic oracle
+- **AES-256-GCM** authenticated encryption - confidentiality + integrity in one primitive
+- **Argon2id** key derivation (256 MB RAM · 4 iterations · 4 lanes) - GPU-resistant password hashing
+- **128-bit random salt** + **96-bit random nonce** generated fresh per operation - no two embeddings are identical even with the same password and text
+- GCM authentication tag is verified **before** any plaintext is released - corrupt or tampered images are rejected
+- All markers (start/end delimiters) are embedded **inside the ciphertext** - no structure is visible in raw image data
+- **Uniform error messages** across all failure paths - no cryptographic oracle
 
 ### Key Bundles (`.key` files)
-- Password and markers are **randomly generated** — the user never types them
+- Password and markers are **randomly generated** - the user never types them
 - The entire bundle is encrypted with AES-256-GCM using an Argon2id-derived master key
-- The file magic header (`SKBX`) is used as **GCM Additional Authenticated Data (AAD)** — tampering with the file header is detected
+- The file magic header (`SKBX`) is used as **GCM Additional Authenticated Data (AAD)** - tampering with the file header is detected
 - Without the master password, the file is indistinguishable from random bytes
 
 ### Security Hardening
-- **Decompression bomb protection** — images above 100 MP (≈ 10 000 × 10 000 px) are rejected before any processing
-- **`secrets.choice()`** for all random generation — cryptographically unbiased, no modulo bias
-- **`subprocess.run()`** instead of `os.system()` — no shell injection vector on Windows
+- **Decompression bomb protection** - images above 100 MP (≈ 10 000 × 10 000 px) are rejected before any processing
+- **`secrets.choice()`** for all random generation - cryptographically unbiased, no modulo bias
+- **`subprocess.run()`** instead of `os.system()` - no shell injection vector on Windows
 - No plaintext secrets ever stored to disk
 
 ### Performance & Architecture
-- **NumPy-vectorised** bit operations — 100–500× faster than pure Python loops
-- **Thread-safe GUI** — all processing runs in worker threads, the main thread only handles UI; never freezes on large images
+- **NumPy-vectorised** bit operations - 100–500× faster than pure Python loops
+- **Thread-safe GUI** - all processing runs in worker threads, the main thread only handles UI; never freezes on large images
 - Thread-to-GUI communication exclusively via `queue.Queue` + `root.after()` polling
 
 ---
@@ -56,11 +56,11 @@ A desktop application for hiding text inside images using **Least Significant Bi
 2. Select a source image with **Browse**
 3. Choose an output path with **Save As**
 4. Enter or paste the text to hide
-5. Set a **Password** (optional — leave empty for unencrypted embedding)
+5. Set a **Password** (optional - leave empty for unencrypted embedding)
 6. Set **Start Marker** and **End Marker** (unique identifiers for your payload(aka text))
 8. Click **Hide Text**
 
-> 💡 Use a **Key Bundle** for maximum security — password and markers are randomly generated and stored encrypted. Load them with the **Key File** button. See below for more information!
+> 💡 Use a **Key Bundle** for maximum security - password and markers are randomly generated and stored encrypted. Load them with the **Key File** button. See below for more information!
 
 <img width="1003" height="935" alt="How to hide" src="https://github.com/user-attachments/assets/72f99b0a-729c-49c5-a73f-2eafe1aeb2cf" />
 
@@ -81,7 +81,7 @@ A desktop application for hiding text inside images using **Least Significant Bi
 1. Open the **Tools** tab → **Generate Key Bundle**
 2. Enter a **Master Password** (this is the only thing you need to remember)
 3. Confirm the master password
-4. Choose a save location — the `.key` file is written encrypted (**keep it in a very very save place**)
+4. Choose a save location - the `.key` file is written encrypted (**keep it in a very very save place**)
 
 Load the bundle in any tab using the **Key File** button. The real credentials are never displayed. The **Master Passwort** must be re-entered upon use.
 
@@ -129,11 +129,11 @@ python steganography_gui.py
 
 # For those who want more information on the backgrounds...
 
-## How Does It Work? — Technical Background
+## How Does It Work? - Technical Background
 
-## 1. Hiding Text Inside Images — LSB Steganography
+## 1. Hiding Text Inside Images - LSB Steganography
 
-A digital image is made up of millions of pixels. Each pixel has three colour channels: **Red, Green, and Blue (RGB)**. Each channel is stored as a number between 0 and 255 — in other words, as **8 bits**.
+A digital image is made up of millions of pixels. Each pixel has three colour channels: **Red, Green, and Blue (RGB)**. Each channel is stored as a number between 0 and 255 - in other words, as **8 bits**.
 
 ```
 Example: A slightly reddish pixel
@@ -142,7 +142,7 @@ Example: A slightly reddish pixel
   Blue:   92  →  0 1 0 1 1 1 0 0
 ```
 
-The **Least Significant Bit (LSB)** is the rightmost bit — the "least important" one. Changing it shifts the colour value by only ±1. On a scale of 0–255, that difference is completely invisible to the human eye. A Red of 198 and a Red of 199 are practically identical.
+The **Least Significant Bit (LSB)** is the rightmost bit - the "least important" one. Changing it shifts the colour value by only ±1. On a scale of 0–255, that difference is completely invisible to the human eye. A Red of 198 and a Red of 199 are practically identical.
 
 ### The Idea
 
@@ -172,25 +172,25 @@ Each pixel can store 3 bits (one per RGB channel). A typical photo at 1920 × 10
 1920 × 1080 × 3 bits = 6,220,800 bits = 777,600 bytes ≈ 760 KB
 ```
 
-That is roughly 760,000 characters of text — more than an entire novel.
+That is roughly 760,000 characters of text - more than an entire novel.
 
 ### Why PNG and Not JPEG?
 
-JPEG compression mathematically alters pixel values to reduce file size. In doing so, it destroys exactly the LSBs where the message is stored. PNG saves pixels losslessly — every single bit remains exactly as it was written.
+JPEG compression mathematically alters pixel values to reduce file size. In doing so, it destroys exactly the LSBs where the message is stored. PNG saves pixels losslessly - every single bit remains exactly as it was written.
 
 ---
 
-## 2. Argon2id — Why Regular Hashing Is Not Enough
+## 2. Argon2id - Why Regular Hashing Is Not Enough
 
 ### The Problem With Weak Passwords
 
-If someone finds an image with a hidden message, they might try to guess the password. With modern hardware — especially GPUs — billions of passwords can be tested per second. A simple algorithm like SHA-256 offers little protection here: it was deliberately designed to be fast, which means an attacker can try thousands of passwords per millisecond.
+If someone finds an image with a hidden message, they might try to guess the password. With modern hardware - especially GPUs - billions of passwords can be tested per second. A simple algorithm like SHA-256 offers little protection here: it was deliberately designed to be fast, which means an attacker can try thousands of passwords per millisecond.
 
 ### What Argon2id Does Differently
 
-**Argon2id** is a **memory-hard function** — an algorithm that deliberately **consumes large amounts of RAM** in order to make testing many passwords simultaneously expensive and slow.
+**Argon2id** is a **memory-hard function** - an algorithm that deliberately **consumes large amounts of RAM** in order to make testing many passwords simultaneously expensive and slow.
 
-The reasoning is straightforward: RAM cannot be parallelised as easily as raw compute power. A GPU may have thousands of cores, but each core has very limited memory. If every single password attempt requires 256 MB of RAM, a GPU with 8 GB can only run 31 attempts in parallel — instead of billions.
+The reasoning is straightforward: RAM cannot be parallelised as easily as raw compute power. A GPU may have thousands of cores, but each core has very limited memory. If every single password attempt requires 256 MB of RAM, a GPU with 8 GB can only run 31 attempts in parallel - instead of billions.
 
 ### The Parameters Used in This Application
 
@@ -203,13 +203,13 @@ The reasoning is straightforward: RAM cannot be parallelised as easily as raw co
 
 A single attempt takes approximately **1–2 seconds** on typical desktop hardware. For the legitimate user: barely noticeable. For an attacker trying to brute-force millions of passwords: effectively impossible.
 
-### The "id" — Best of Both Worlds
+### The "id" - Best of Both Worlds
 
 Argon2 comes in three variants. **Argon2id** combines the strengths of the other two:
 
-- **Argon2d** — resistant to GPU attacks through data-dependent memory access patterns
-- **Argon2i** — resistant to side-channel attacks through data-independent memory access patterns
-- **Argon2id** — first half behaves like Argon2i, second half like Argon2d → protects against both attack classes simultaneously
+- **Argon2d** - resistant to GPU attacks through data-dependent memory access patterns
+- **Argon2i** - resistant to side-channel attacks through data-independent memory access patterns
+- **Argon2id** - first half behaves like Argon2i, second half like Argon2d → protects against both attack classes simultaneously
 
 Argon2id won the **Password Hashing Competition** in 2015 and is today recommended as the standard for password hashing by RFC 9106.
 
@@ -226,7 +226,7 @@ Password + random Salt (16 bytes)
   AES-256-GCM encryption
 ```
 
-The **salt** is crucial here: it is randomly generated fresh for every encryption and stored inside the image payload. Even if two messages are encrypted with the same password, a completely different key is derived each time — rendering rainbow tables and precomputed attacks useless.
+The **salt** is crucial here: it is randomly generated fresh for every encryption and stored inside the image payload. Even if two messages are encrypted with the same password, a completely different key is derived each time - rendering rainbow tables and precomputed attacks useless.
 
 # A clear diagram about the encryption used in **Hide**
 > Source file: "encryption_diagram.html"
@@ -293,7 +293,7 @@ The entire stream is written into the **least significant bits** of the flattene
 | Parallelism | 4 lanes | Thread utilisation |
 | Key length | 32 bytes | 256-bit AES key |
 
-These parameters follow the RFC 9106 "offline" profile for strong brute-force resistance. Key derivation takes approximately **1–2 seconds** on typical desktop hardware — intentional.
+These parameters follow the RFC 9106 "offline" profile for strong brute-force resistance. Key derivation takes approximately **1–2 seconds** on typical desktop hardware - intentional.
 
 ---
 
@@ -317,7 +317,7 @@ The application displays live capacity and a usage progress bar while you type.
 
 ## Security Considerations
 
-- **Steganographic detectability**: Sequential LSB embedding is detectable by statistical steganalysis tools (chi-square test, RS analysis). This tool prioritises **cryptographic security** over steganographic stealth — an attacker who finds the hidden data still cannot read it without the password.
+- **Steganographic detectability**: Sequential LSB embedding is detectable by statistical steganalysis tools (chi-square test, RS analysis). This tool prioritises **cryptographic security** over steganographic stealth - an attacker who finds the hidden data still cannot read it without the password.
 - **Password strength**: Argon2id provides strong brute-force resistance, but a weak password is still a weak password. Use the Key Bundle generator for maximum entropy.
 - **Lossless output only**: Always use PNG as the output format. JPEG recompression destroys LSB data.
 
@@ -325,7 +325,7 @@ The application displays live capacity and a usage progress bar while you type.
 
 ## License
 
-GNUv3 License — see [LICENSE](LICENSE) for details.
+GNUv3 License - see [LICENSE](LICENSE) for details.
 
 ---
 

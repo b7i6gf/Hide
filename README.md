@@ -1,6 +1,7 @@
 # 🔐 Hide - A Secure LSB Steganography tool
 
 > This is a Python program to encrypted text inside images — undetectable, authenticated, and open source.
+> Vibe coded with the help of Claude Sonnet 4.6
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)
 ![License](https://img.shields.io/badge/License-GNUv3-green?style=flat-square)
@@ -227,6 +228,13 @@ Password + random Salt (16 bytes)
 
 The **salt** is crucial here: it is randomly generated fresh for every encryption and stored inside the image payload. Even if two messages are encrypted with the same password, a completely different key is derived each time — rendering rainbow tables and precomputed attacks useless.
 
+# A clear diagram about the encryption used in **Hide**
+> Source file: "encryption_diagram.html"
+<img width="2432" height="5517" alt="image" src="https://github.com/user-attachments/assets/964fedcf-35c9-45c7-992b-63728be98f2a" />
+
+
+
+
 
 ## Payload Format
 
@@ -314,7 +322,6 @@ The application displays live capacity and a usage progress bar while you type.
 - **Lossless output only**: Always use PNG as the output format. JPEG recompression destroys LSB data.
 
 ---
-
 
 ## License
 

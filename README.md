@@ -328,12 +328,12 @@ The application displays live capacity and a usage progress bar while you type.
 This software ("Hide - A Secure LSB Steganography Tool") is provided "as is", without warranty of any kind, either express or implied.
 The author accepts no liability for:
 
-Loss, corruption, or inaccessibility of any data or files
-Loss of passwords, key files, or encrypted content
-Damage to hardware or software caused by using this program
-Legal consequences arising from the use of this software
-Security vulnerabilities exploited by third parties
-Any indirect, incidental, or consequential damages of any kind
+- Loss, corruption, or inaccessibility of any data or files
+- Loss of passwords, key files, or encrypted content
+- Damage to hardware or software caused by using this program
+- Legal consequences arising from the use of this software
+- Security vulnerabilities exploited by third parties
+- Any indirect, incidental, or consequential damages of any kind
 
 Use of this software is entirely at your own risk. The user is solely responsible for securely storing passwords and key files. Lost passwords or key files cannot be recovered.
 This software is intended for lawful purposes only. Using it to circumvent security systems, conceal illegal content, or engage in any other unlawful activity is strictly prohibited.

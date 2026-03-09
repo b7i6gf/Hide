@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Secure LSB Steganography with GUI
+Hide - A Secure LSB Steganography Tool v1.1
 ==================================
 
 Modern GUI application for steganography with AES-256-GCM encryption
 and Argon2id key derivation.
 
 Author: b7i6gf + Claude Sonnet 4.6
-Version: 1.0
+Version: 1.1
 """
 
 import os
@@ -26,7 +26,7 @@ from PIL import Image
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 
-# Reject decompression bombs - images above this pixel count are refused.
+# Reject decompression bombs — images above this pixel count are refused.
 # 178,956,970 px ≈ ~170 MP (Pillow default); we lower it to a sane limit.
 Image.MAX_IMAGE_PIXELS = 100_000_000   # 100 MP (~10 000 x 10 000 px)
 
@@ -40,13 +40,13 @@ Image.MAX_IMAGE_PIXELS = 100_000_000   # 100 MP (~10 000 x 10 000 px)
 #   [ct+tag] N+16 bytes – AES-256-GCM ciphertext + 128-bit auth tag
 #
 # The ciphertext decrypts to: magic_sequence + plaintext + end_delimiter
-# Markers are therefore ALWAYS inside the ciphertext - never visible in raw data.
+# Markers are therefore ALWAYS inside the ciphertext — never visible in raw data.
 #
 # Binary payload layout (unencrypted, version byte 0x00):
 #   [0x00]  1 byte   – format version
 #   [data]  N bytes  – magic_sequence + plaintext + end_delimiter in UTF-8
 #
-# All bytes are written directly as LSBs - no base64 encoding needed.
+# All bytes are written directly as LSBs — no base64 encoding needed.
 
 PAYLOAD_VERSION_ENC   = 0x01   # encrypted payload marker
 PAYLOAD_VERSION_PLAIN = 0x00   # unencrypted payload marker
@@ -56,9 +56,9 @@ TAG_LEN   = 16   # 128-bit AES-GCM authentication tag
 GCM_OVERHEAD = 1 + SALT_LEN + NONCE_LEN + TAG_LEN   # 45 bytes total
 PLAIN_OVERHEAD = 1                                    # version byte only
 
-# Argon2id parameters - "offline" hardening profile (RFC 9106 §4):
+# Argon2id parameters — "offline" hardening profile (RFC 9106 §4):
 # 256 MB RAM + 4 iterations provides strong resistance against GPU brute-force.
-# Key derivation takes ~1–2 s on typical desktop hardware - acceptable for a
+# Key derivation takes ~1–2 s on typical desktop hardware — acceptable for a
 # one-time unlock operation; not suitable for high-frequency use.
 ARGON2_TIME_COST   = 4        # iterations (was 3)
 ARGON2_MEMORY_COST = 262144   # 256 MB RAM (was 64 MB)
@@ -89,7 +89,7 @@ class SecureSteganography:
         N bytes AES-GCM ciphertext  (UTF-8 of magic+plaintext+end)
        16 bytes AES-GCM auth tag    (appended by AESGCM.encrypt)
 
-    Markers live INSIDE the ciphertext - they are never visible in raw data.
+    Markers live INSIDE the ciphertext — they are never visible in raw data.
     All error paths from decryption raise the same message to prevent oracles.
     """
 
@@ -133,7 +133,7 @@ class SecureSteganography:
         Constructs the binary stream to be embedded in the image.
 
         Stream layout:
-            4 bytes   big-endian uint32 - byte length of the payload block
+            4 bytes   big-endian uint32 — byte length of the payload block
             1 byte    version (0x01 encrypted / 0x00 plain)
            [encrypted path only]
            16 bytes   Argon2id salt
@@ -146,6 +146,18 @@ class SecureSteganography:
         Markers are INSIDE the ciphertext and never visible in raw bytes.
         Called by hide_text().
         """
+        if not self.magic_sequence or len(self.magic_sequence) < 4:
+            raise SteganographyError(
+                "Start Marker must be at least 4 characters long."
+            )
+        if not self.end_delimiter or len(self.end_delimiter) < 4:
+            raise SteganographyError(
+                "End Marker must be at least 4 characters long."
+            )
+        if self.magic_sequence == self.end_delimiter:
+            raise SteganographyError(
+                "Start Marker and End Marker must be different."
+            )
         inner = (self.magic_sequence + plaintext + self.end_delimiter).encode('utf-8')
 
         if self.password:
@@ -164,14 +176,14 @@ class SecureSteganography:
         Reconstructs the plaintext from the full binary stream read from image LSBs.
 
         Reads the 4-byte length prefix first, then slices exactly that many bytes
-        as the payload - trailing image bytes are discarded before any decryption.
+        as the payload — trailing image bytes are discarded before any decryption.
 
         All failure paths (wrong password, GCM InvalidTag, wrong markers, bad version,
         truncated data, bad UTF-8) raise the same error message to prevent oracles.
 
         Called by extract_text().
         """
-        _ERR = "Decryption failed - wrong password, wrong markers, or corrupted data."
+        _ERR = "Decryption failed — wrong password, wrong markers, or corrupted data."
 
         if len(stream) < LEN_PREFIX_BYTES:
             raise SteganographyError(_ERR)
@@ -199,7 +211,7 @@ class SecureSteganography:
                 key   = self._derive_key(self.password, salt)
                 inner = AESGCM(key).decrypt(nonce, ct_tag, None)
             except Exception:
-                # Uniform error - GCM InvalidTag AND wrong-password-derived-key both land here
+                # Uniform error — GCM InvalidTag AND wrong-password-derived-key both land here
                 raise SteganographyError(_ERR)
 
             try:
@@ -209,7 +221,7 @@ class SecureSteganography:
 
         elif version == PAYLOAD_VERSION_PLAIN:
             if self.password:
-                # Caller expects encrypted data but payload is plain - uniform error
+                # Caller expects encrypted data but payload is plain — uniform error
                 raise SteganographyError(_ERR)
             try:
                 inner_str = payload[1:].decode('utf-8')
@@ -219,7 +231,7 @@ class SecureSteganography:
         else:
             raise SteganographyError(_ERR)
 
-        # Validate markers - same uniform error (no oracle distinguishing marker vs crypto failure)
+        # Validate markers — same uniform error (no oracle distinguishing marker vs crypto failure)
         if not inner_str.startswith(self.magic_sequence):
             raise SteganographyError(_ERR)
         tail = inner_str[len(self.magic_sequence):]
@@ -322,12 +334,13 @@ class SecureSteganography:
             img = self._validate_image(image_path)
             img_array = np.array(img)
 
-            # Capacity check against encoded byte length (exact, not char estimate)
-            max_chars = self.calculate_capacity(image_path, encrypted=bool(self.password))
-            if len(text) > max_chars:
+            # Capacity check against encoded byte length — correct for multibyte UTF-8 (CJK, emoji, etc.)
+            max_bytes = self.calculate_capacity(image_path, encrypted=bool(self.password))
+            text_bytes = len(text.encode('utf-8'))
+            if text_bytes > max_bytes:
                 raise SteganographyError(
-                    f"Text too long! Maximum: {max_chars:,} characters, "
-                    f"given: {len(text):,} characters"
+                    f"Text too long! Maximum: {max_bytes:,} bytes, "
+                    f"given: {text_bytes:,} bytes ({len(text):,} characters)"
                 )
 
             payload_bytes = self._build_payload(text)
@@ -374,7 +387,7 @@ class SecureSteganography:
         Extracts hidden text from an image via LSB steganography.
 
         Reads the first LEN_PREFIX_BYTES (4) from the LSB stream to determine
-        exact payload size, then reads only that many additional bytes - no
+        exact payload size, then reads only that many additional bytes — no
         trailing garbage reaches _parse_payload() or the GCM tag check.
         Called by SteganographyGUI._extract_text() and verify_integrity().
         """
@@ -399,10 +412,10 @@ class SecureSteganography:
             stream_len = LEN_PREFIX_BYTES + payload_len
             if stream_len * 8 > total_bits:
                 raise SteganographyError(
-                    "Decryption failed - wrong password, wrong markers, or corrupted data."
+                    "Decryption failed — wrong password, wrong markers, or corrupted data."
                 )
 
-            # Read exactly prefix + payload bytes - nothing more
+            # Read exactly prefix + payload bytes — nothing more
             stream = self._bits_to_bytes(lsb_bits, stream_len)
 
             if progress_callback:
@@ -441,7 +454,7 @@ class SecureSteganography:
     def generate_random_password(length: int = 32) -> str:
         """
         Generates a cryptographically unbiased random password of the given length.
-        Uses secrets.choice() for uniform distribution - no modulo bias.
+        Uses secrets.choice() for uniform distribution — no modulo bias.
         Called by SteganographyGUI._generate_key() to produce bundle credentials.
         """
         alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*'
@@ -451,14 +464,14 @@ class SecureSteganography:
     def generate_random_sequence(length: int = 12) -> str:
         """
         Generates a cryptographically unbiased alphanumeric sequence for magic/end markers.
-        Uses secrets.choice() for uniform distribution - no modulo bias.
+        Uses secrets.choice() for uniform distribution — no modulo bias.
         Called by SteganographyGUI._generate_key() to produce bundle marker values.
         """
         alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     # ------------------------------------------------------------------
-    # Key bundle - encrypted file format constants
+    # Key bundle — encrypted file format constants
     # ------------------------------------------------------------------
     # Encrypted bundle binary layout:
     #   4 bytes  magic header  b'SKBX'  (Secure Key Bundle eXcrypted)
@@ -506,7 +519,7 @@ class SecureSteganography:
 
         The entire bundle content (stego password + both markers) is encrypted
         with AES-256-GCM using a key derived from master_password via Argon2id.
-        The file contains NO plaintext - without the master password it is
+        The file contains NO plaintext — without the master password it is
         indistinguishable from random bytes.
 
         Called by SteganographyGUI._generate_key().
@@ -521,7 +534,7 @@ class SecureSteganography:
             salt   = os.urandom(SecureSteganography._B_SALT_LEN)
             nonce  = os.urandom(SecureSteganography._B_NONCE_LEN)
             key    = SecureSteganography._bundle_derive_key(master_password, salt)
-            # Magic header used as AAD - tampering with it is detected by GCM
+            # Magic header used as AAD — tampering with it is detected by GCM
             ct_tag = AESGCM(key).encrypt(nonce, plaintext,
                                          SecureSteganography._BUNDLE_MAGIC)
 
@@ -557,15 +570,20 @@ class SecureSteganography:
 
         Returns dict with keys: password, magic_seq, end_seq.
         Raises SteganographyError with a uniform message on any failure
-        (wrong master password, tampered file, corrupt data) - no oracle.
+        (wrong master password, tampered file, corrupt data) — no oracle.
 
         Called by SteganographyGUI._browse_key_file().
         """
         _ERR = "Invalid key bundle or wrong master password."
+        _MAX_BUNDLE_SIZE = 4096   # key bundles are structurally < 200 bytes; 4 KB is a hard ceiling
 
         try:
             with open(filepath, 'rb') as f:
-                data = f.read()
+                data = f.read(_MAX_BUNDLE_SIZE + 1)
+            if len(data) > _MAX_BUNDLE_SIZE:
+                raise SteganographyError(_ERR)
+        except SteganographyError:
+            raise
         except Exception as e:
             raise SteganographyError(f"Error reading key file: {e}")
 
@@ -684,13 +702,6 @@ def _ask_password(parent: tk.Tk, title: str, prompt: str) -> Optional[str]:
     return result[0]
 
 
-def _ask_password_confirm(parent: tk.Tk, title: str, prompt: str) -> Optional[str]:
-    """
-    Shows a modal dialog with a single masked password Entry for confirmation.
-    Returns the entered string, or None if the user cancelled.
-    Called by SteganographyGUI._generate_key() to confirm the master password.
-    """
-    return _ask_password(parent, title, prompt)
 
 
 class SteganographyGUI:
@@ -701,7 +712,7 @@ class SteganographyGUI:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Hide - A Secure LSB Steganography Tool v1.0")
+        self.root.title("Hide - A Secure LSB Steganography Tool v1.1")
         self.root.geometry("820x700")
         self.root.minsize(640, 520)
 
@@ -776,7 +787,7 @@ class SteganographyGUI:
         self.keygen_master_var = tk.StringVar()
         self.keygen_master_show_var = tk.BooleanVar()
 
-        # Internal storage for bundle credentials - never shown in the UI
+        # Internal storage for bundle credentials — never shown in the UI
         self._hide_real_password    = None
         self._hide_real_magic       = None
         self._hide_real_end         = None
@@ -814,7 +825,7 @@ class SteganographyGUI:
 
     def _schedule(self, fn, *args, **kwargs):
         """
-        Stellt eine GUI-Aktion in die Queue - sicher aus Worker-Threads aufrufbar.
+        Stellt eine GUI-Aktion in die Queue — sicher aus Worker-Threads aufrufbar.
         Wird von Worker-Threads aufgerufen um tkinter-Zugriffe zu delegieren.
         """
         self._gui_queue.put(lambda: fn(*args, **kwargs))
@@ -857,7 +868,7 @@ class SteganographyGUI:
                   foreground="blue").grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(3, 0))
         img_frame.columnconfigure(0, weight=1)
 
-        # Output file - directly below source image
+        # Output file — directly below source image
         output_frame = ttk.LabelFrame(hide_frame, text="Output File", padding="6")
         output_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 6))
         ttk.Entry(output_frame, textvariable=self.hide_output_var,
@@ -897,7 +908,7 @@ class SteganographyGUI:
         opts_frame = ttk.LabelFrame(hide_frame, text="Password & Markers", padding="6")
         opts_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(0, 6))
 
-        # Row 0: password fields - always visible and active
+        # Row 0: password fields — always visible and active
         ttk.Label(opts_frame, text="Password:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
         self.password_entry = ttk.Entry(opts_frame, textvariable=self.password_var,
                                         show="*", font=self.default_font)
@@ -958,7 +969,7 @@ class SteganographyGUI:
         opts_frame = ttk.LabelFrame(extract_frame, text="Password & Markers", padding="6")
         opts_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 6))
 
-        # Row 0: password fields - always visible and active
+        # Row 0: password fields — always visible and active
         ttk.Label(opts_frame, text="Password:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
         self.decrypt_password_entry = ttk.Entry(opts_frame, textvariable=self.decrypt_password_var,
                                                 show="*", font=self.default_font)
@@ -1063,7 +1074,7 @@ class SteganographyGUI:
         self.verify_remove_key_btn.grid(row=1, column=3, pady=(5, 0))
         self.verify_key_status_label = ttk.Label(verify_frame, text="Key loaded",
                                                  foreground="dark green")
-        # Not gridded yet - shown only when a bundle is active
+        # Not gridded yet — shown only when a bundle is active
 
         # Row 2: start marker + end marker
         ttk.Label(verify_frame, text="Start Marker:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5), pady=(5, 0))
@@ -1082,7 +1093,7 @@ class SteganographyGUI:
         verify_frame.columnconfigure(1, weight=2)
         verify_frame.columnconfigure(3, weight=1)
 
-        # Generate key bundle - master password only, all values generated randomly
+        # Generate key bundle — master password only, all values generated randomly
         key_frame = ttk.LabelFrame(tools_frame, text="Generate Key Bundle", padding="6")
         key_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 6))
 
@@ -1104,7 +1115,7 @@ class SteganographyGUI:
         ttk.Button(key_frame, text="✕", width=2,
                    command=lambda: self.keygen_master_var.set("")).grid(row=1, column=3)
         ttk.Label(key_frame,
-                  text="Required - encrypts the bundle file. Never stored anywhere!",
+                  text="Required — encrypts the bundle file. Never stored.",
                   foreground="gray").grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(2, 0))
 
         ttk.Button(key_frame, text="Generate & Save",
@@ -1119,33 +1130,33 @@ class SteganographyGUI:
         about_frame = ttk.LabelFrame(tools_frame, text="About", padding="6")
         about_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 6))
         about_text = (
-            "Hide - A Secure LSB Steganography Tool \u2022  Version 1.0\n\n"
-            "Steganography\n"
+            "Hide - A Secure LSB Steganography Tool Version 1.1\n\n"
+            "> Steganography\n"
             "  \u2022  Least Significant Bit (LSB) embedding in RGB images\n"
             "  \u2022  Sequential pixel embedding - visually undetectable\n"
             "  \u2022  Supports PNG, JPEG, BMP, GIF, TIFF and more\n"
             "  \u2022  Output always saved as lossless PNG\n\n"
-            "Cryptography\n"
+            "> Cryptography\n"
             "  \u2022  AES-256-GCM authenticated encryption\n"
             "  \u2022  Argon2id key derivation (256 MB RAM \u2022 4 iterations \u2022 4 lanes)\n"
             "  \u2022  128-bit random salt + 96-bit random nonce per operation\n"
             "  \u2022  GCM auth tag validates integrity before any decryption\n"
             "  \u2022  Markers embedded inside ciphertext - never in plaintext\n"
             "  \u2022  Uniform error messages - no cryptographic oracle\n\n"
-            "Key Bundle (.key files)\n"
+            "> Key Bundle (.key files)\n"
             "  \u2022  Password + markers randomly generated, never typed\n"
             "  \u2022  Bundle encrypted with AES-256-GCM + Argon2id master key\n"
             "  \u2022  File header used as GCM AAD - tampering is detected\n\n"
-            "Security Hardening\n"
+            "> Security Hardening\n"
             "  \u2022  Max image size: 100 MP (decompression bomb protection)\n"
             "  \u2022  Cryptographically unbiased random generation (secrets module)\n"
-            "  \u2022  No shell injection (subprocess.run instead of os.system)\n\n"
-            "Performance & Architecture\n"
+            "  \u2022  No shell injection  (subprocess.run instead of os.system)\n\n"
+            "> Performance & Architecture\n"
             "  \u2022  NumPy-vectorised bit operations (100\u2013500\u00d7 vs pure Python)\n"
             "  \u2022  Thread-safe GUI - worker threads via queue, never freezes\n"
             "  \u2022  4-byte length prefix - exact payload read, no GCM padding waste\n\n"
-            "Technologies\n"
-            "  Python 3.14  \u2022  tkinter  \u2022 Pillow 12.0.0 \u2022 NumPy 2.4.2 \u2022 cryptography 46.0.5"
+            "> Technologies\n"
+            "  Python 3.14.3  \u2022  tkinter  \u2022  Pillow 12.0.0  \u2022  NumPy 2.4.2  \u2022  cryptography 46.0.5"
         )
         about_text_widget = scrolledtext.ScrolledText(
             about_frame, height=6, wrap=tk.WORD,
@@ -1258,7 +1269,7 @@ class SteganographyGUI:
         """
         Opens file dialog, asks for master password, decrypts the bundle,
         stores credentials internally, and locks the relevant fields to readonly.
-        Fields show a placeholder - actual values are never displayed.
+        Fields show a placeholder — actual values are never displayed.
         Called by the Key File buttons in Hide and Extract tabs.
         """
         filename = filedialog.askopenfilename(
@@ -1443,7 +1454,7 @@ class SteganographyGUI:
                 self.capacity_progress.grid_remove()
             elif char_count > 0:
                 try:
-                    # Always calculate without encryption flag - capacity is approximate by design
+                    # Always calculate without encryption flag — capacity is approximate by design
                     steg = SecureSteganography(magic_sequence=magic_seq, end_delimiter=end_seq)
                     max_chars = steg.calculate_capacity(image_path, encrypted=False)
 
@@ -1454,7 +1465,7 @@ class SteganographyGUI:
                         if usage_percent >= 95:
                             count_text += (
                                 f" | ~{remaining:,} characters remaining "
-                                f"(~{usage_percent:.0f}% - close to limit)"
+                                f"(~{usage_percent:.0f}% — close to limit)"
                             )
                             self.char_count_label.config(foreground="#B8500A")
                         else:
@@ -1493,7 +1504,7 @@ class SteganographyGUI:
     def _update_capacity_display(self):
         """
         Updates the capacity line above the text input field.
-        Always calculates without encryption flag - capacity is approximate by design.
+        Always calculates without encryption flag — capacity is approximate by design.
         Called after image selection or bundle load/clear.
         """
         image_path = normalize_path(self.hide_image_var.get())
@@ -1567,9 +1578,12 @@ class SteganographyGUI:
             return
 
         def worker():
+            # Local copies so the finally block can zero them
+            # without causing UnboundLocalError on closure variables.
+            _pw, _magic, _end = password, magic_seq, end_seq
             try:
                 self._schedule(self._update_status, "Hiding text...")
-                steg = SecureSteganography(password, magic_sequence=magic_seq, end_delimiter=end_seq)
+                steg = SecureSteganography(_pw, magic_sequence=_magic, end_delimiter=_end)
                 result = steg.hide_text(
                     image_path, text, output_path,
                     lambda v: self._schedule(self._update_progress, v)
@@ -1594,6 +1608,8 @@ class SteganographyGUI:
                 self._schedule(self._update_status, "Ready")
                 self._schedule(self._update_progress, 0)
                 self._schedule(messagebox.showerror, "Error", f"Unexpected error: {e}")
+            finally:
+                _pw = _magic = _end = None  # noqa: F841
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1622,9 +1638,10 @@ class SteganographyGUI:
             return
 
         def worker():
+            _pw, _magic, _end = password, magic_seq, end_seq
             try:
                 self._schedule(self._update_status, "Extracting text...")
-                steg = SecureSteganography(password, magic_sequence=magic_seq, end_delimiter=end_seq)
+                steg = SecureSteganography(_pw, magic_sequence=_magic, end_delimiter=_end)
                 result = steg.extract_text(
                     image_path,
                     lambda v: self._schedule(self._update_progress, v)
@@ -1653,10 +1670,10 @@ class SteganographyGUI:
                 self._schedule(self._update_status, "Ready")
                 self._schedule(self._update_progress, 0)
                 self._schedule(messagebox.showerror, "Error", f"Unexpected error: {e}")
+            finally:
+                _pw = _magic = _end = None  # noqa: F841
 
         threading.Thread(target=worker, daemon=True).start()
-
-    # ------------------------------------------------------------------
     # Tools-Tab Aktionen
     # ------------------------------------------------------------------
 
@@ -1703,20 +1720,29 @@ class SteganographyGUI:
         if not magic_seq or not end_seq:
             messagebox.showerror("Error", "Please enter Start Marker and End Marker.")
             return
-        try:
-            self._update_status("Checking for hidden data...")
-            steg = SecureSteganography(password, magic_sequence=magic_seq, end_delimiter=end_seq)
-            if steg.verify_integrity(image_path):
-                self.verify_result_var.set("Hidden data found!")
-                messagebox.showinfo("Verification", "Image contains hidden data!")
-            else:
-                self.verify_result_var.set("No hidden data found")
-                messagebox.showinfo("Verification", "No hidden data found or data is corrupted.")
-            self._update_status("Ready")
-        except Exception as e:
-            self.verify_result_var.set(f"Fehler: {e}")
-            self._update_status("Ready")
-            messagebox.showerror("Error", f"Fehler bei Verifikation: {e}")
+
+        def worker():
+            _pw, _magic, _end = password, magic_seq, end_seq
+            try:
+                self._schedule(self._update_status, "Checking for hidden data...")
+                steg = SecureSteganography(_pw, magic_sequence=_magic, end_delimiter=_end)
+                found = steg.verify_integrity(image_path)
+                if found:
+                    self._schedule(self.verify_result_var.set, "Hidden data found!")
+                    self._schedule(messagebox.showinfo, "Verification", "Image contains hidden data!")
+                else:
+                    self._schedule(self.verify_result_var.set, "No hidden data found")
+                    self._schedule(messagebox.showinfo, "Verification",
+                                   "No hidden data found or data is corrupted.")
+                self._schedule(self._update_status, "Ready")
+            except Exception as e:
+                self._schedule(self.verify_result_var.set, f"Error: {e}")
+                self._schedule(self._update_status, "Ready")
+                self._schedule(messagebox.showerror, "Error", f"Verification failed: {e}")
+            finally:
+                _pw = _magic = _end = None  # noqa: F841
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _clear_keygen_fields(self):
         """Leert alle drei Key-Generator-Eingabefelder. Wird vom Button aufgerufen."""
@@ -1752,7 +1778,7 @@ class SteganographyGUI:
             return
 
         # Confirm master password to prevent typos locking the user out
-        confirm = _ask_password_confirm(
+        confirm = _ask_password(
             self.root,
             title="Confirm Master Password",
             prompt="Re-enter Master Password to confirm:",
@@ -1781,7 +1807,7 @@ class SteganographyGUI:
                 f"Encrypted key bundle saved successfully!\n\n"
                 f"File: {filename}\n\n"
                 "The bundle is encrypted with your Master Password.\n"
-                "WARNING: Keep the Master Password safe - it is NOT stored\n"
+                "WARNING: Keep the Master Password safe — it is NOT stored\n"
                 "anywhere. Without it, this bundle cannot be opened."
             )
         except SteganographyError as e:

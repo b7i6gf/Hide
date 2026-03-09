@@ -451,7 +451,7 @@ class SecureSteganography:
             return False
 
     @staticmethod
-    def generate_random_password(length: int = 32) -> str:
+    def generate_random_password(length: int = 512) -> str:
         """
         Generates a cryptographically unbiased random password of the given length.
         Uses secrets.choice() for uniform distribution — no modulo bias.
@@ -461,7 +461,7 @@ class SecureSteganography:
         return ''.join(secrets.choice(alphabet) for _ in range(length))
 
     @staticmethod
-    def generate_random_sequence(length: int = 12) -> str:
+    def generate_random_sequence(length: int = 64) -> str:
         """
         Generates a cryptographically unbiased alphanumeric sequence for magic/end markers.
         Uses secrets.choice() for uniform distribution — no modulo bias.
@@ -1099,6 +1099,7 @@ class SteganographyGUI:
 
         ttk.Label(key_frame,
                   text="Password and markers are generated randomly and stored encrypted.\n"
+                       "Highly secure with a 512 character password and 64 character sequences!\n"
                        "You only need to set and remember the Master Password.",
                   foreground="gray", justify=tk.LEFT).grid(
                       row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 6))

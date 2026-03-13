@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/badge/License-GNUv3-green?style=flat-square)
 ![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-orange?style=flat-square)
 ![KDF](https://img.shields.io/badge/KDF-Argon2id-red?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.0-lightgrey?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.2-lightgrey?style=flat-square)
 
 A desktop application for hiding text inside images using **Least Significant Bit (LSB) steganography**, combined with **AES-256-GCM authenticated encryption** and **Argon2id key derivation**. The result is an image that looks identical to the original but contains an encrypted, tamper-evident hidden message.
 

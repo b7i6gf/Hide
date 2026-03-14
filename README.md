@@ -58,7 +58,7 @@ A desktop application for hiding text inside images using **Least Significant Bi
 4. Enter or paste the text to hide
 5. Set a **Password** (optional - leave empty for unencrypted embedding)
 6. Set **Start Marker** and **End Marker** (unique identifiers for your payload(aka text))
-8. Click **Hide Text**
+7. Click **Hide Text**
 
 > 💡 Use a **Key Bundle** for maximum security - password and markers are randomly generated and stored encrypted. Load them with the **Key File** button. See below for more information!
 
@@ -103,15 +103,15 @@ For using .py, the following installation requirements are needed.
 ### Install dependencies
 
 ```bash
-pip install Pillow numpy "cryptography>=41"
+pip install Pillow numpy cryptography
 ```
 
-> **Note:** `cryptography >= 41` is required for Argon2id support.
+> **Note:** `cryptography` is required for Argon2id support.
 
 ### Run
 
 ```bash
-python steganography_gui.py
+python hide.py
 ```
 
 ---

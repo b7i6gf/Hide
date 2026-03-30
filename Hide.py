@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Hide - A Secure LSB Steganography Tool v1.1
+Hide - A Secure LSB Steganography Tool v1.2.1
 ==================================
 
 Modern GUI application for steganography with AES-256-GCM encryption
 and Argon2id key derivation.
 
 Author: b7i6gf + Claude Sonnet 4.6
-Version: 1.1
+Version: 1.2.1
 """
 
 import os
@@ -16,6 +16,7 @@ import secrets
 import subprocess
 import threading
 import queue
+import unicodedata
 from typing import Optional, Tuple
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -97,8 +98,15 @@ class SecureSteganography:
                  magic_sequence: Optional[str] = None,
                  end_delimiter: Optional[str] = None):
         self.password = password
-        self.magic_sequence = magic_sequence
-        self.end_delimiter = end_delimiter
+        # NFC normalization ensures consistent codepoint form regardless of
+        # OS keyboard / clipboard input method — prevents silent decryption
+        # failure when the same visual character has multiple Unicode encodings.
+        self.magic_sequence = (
+            unicodedata.normalize('NFC', magic_sequence) if magic_sequence else magic_sequence
+        )
+        self.end_delimiter = (
+            unicodedata.normalize('NFC', end_delimiter) if end_delimiter else end_delimiter
+        )
 
     # ------------------------------------------------------------------
     # Key derivation
@@ -157,6 +165,11 @@ class SecureSteganography:
         if self.magic_sequence == self.end_delimiter:
             raise SteganographyError(
                 "Start Marker and End Marker must be different."
+            )
+        if self.end_delimiter in plaintext:
+            raise SteganographyError(
+                "The plaintext contains the End Marker string. "
+                "Choose a different End Marker or remove it from the text."
             )
         inner = (self.magic_sequence + plaintext + self.end_delimiter).encode('utf-8')
 
@@ -267,18 +280,24 @@ class SecureSteganography:
     # Image helpers
     # ------------------------------------------------------------------
 
-    def _validate_image(self, image_path: str) -> Image.Image:
+    def _validate_image(self, image_path: str) -> tuple:
         """
-        Validates and loads an image, converts to RGB if needed.
+        Validates and loads an image, converts to RGB, returns (img, img_array).
+        The file handle is closed as soon as the pixel data is read into the array.
         Called by hide_text(), extract_text(), and calculate_capacity().
         """
         if not os.path.exists(image_path):
             raise SteganographyError(f"Image file not found: {image_path}")
         try:
-            img = Image.open(image_path)
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            return img
+            with Image.open(image_path) as _raw:
+                if _raw.mode != 'RGB':
+                    img = _raw.convert('RGB')
+                else:
+                    img = _raw.copy()
+            img_array = np.array(img)
+            return img, img_array
+        except SteganographyError:
+            raise
         except Exception as e:
             raise SteganographyError(f"Error loading image: {e}")
 
@@ -286,9 +305,10 @@ class SecureSteganography:
     # Capacity
     # ------------------------------------------------------------------
 
-    def calculate_capacity(self, image_path: str, encrypted: bool = False) -> int:
+    def calculate_capacity(self, image_path: str, encrypted: bool = False) -> tuple:
         """
-        Returns the maximum plaintext character capacity of an image.
+        Returns (max_bytes, img_size) where max_bytes is the maximum plaintext
+        byte capacity of the image and img_size is (width, height) in pixels.
 
         Full binary stream overhead:
           - LEN_PREFIX_BYTES (4) always
@@ -296,10 +316,10 @@ class SecureSteganography:
           - plain:     + 1 version = +1
           - both:      + UTF-8 byte length of magic_sequence + end_delimiter
 
-        Called by hide_text() and _update_char_count().
+        Returning img_size avoids a second Image.open() call at every call site.
+        Called by _check_capacity() and _update_capacity_display().
         """
-        img = self._validate_image(image_path)
-        img_array = np.array(img)
+        img, img_array = self._validate_image(image_path)
 
         available_bytes = (img_array.shape[0] * img_array.shape[1] * 3) // 8
 
@@ -311,7 +331,7 @@ class SecureSteganography:
 
         crypto_overhead = GCM_OVERHEAD if encrypted else PLAIN_OVERHEAD
         total_overhead  = LEN_PREFIX_BYTES + crypto_overhead + marker_bytes
-        return max(0, available_bytes - total_overhead)
+        return max(0, available_bytes - total_overhead), img.size
 
     # ------------------------------------------------------------------
     # Core operations
@@ -331,11 +351,19 @@ class SecureSteganography:
             if not text.strip():
                 raise SteganographyError("Text must not be empty.")
 
-            img = self._validate_image(image_path)
-            img_array = np.array(img)
+            img, img_array = self._validate_image(image_path)
 
-            # Capacity check against encoded byte length — correct for multibyte UTF-8 (CJK, emoji, etc.)
-            max_bytes = self.calculate_capacity(image_path, encrypted=bool(self.password))
+            # Capacity check inlined from the already-loaded img_array — avoids a
+            # second _validate_image() call (redundant I/O + TOCTOU gap).
+            available_bytes = (img_array.shape[0] * img_array.shape[1] * 3) // 8
+            marker_bytes = 0
+            if self.magic_sequence:
+                marker_bytes += len(self.magic_sequence.encode('utf-8'))
+            if self.end_delimiter:
+                marker_bytes += len(self.end_delimiter.encode('utf-8'))
+            crypto_overhead = GCM_OVERHEAD if self.password else PLAIN_OVERHEAD
+            max_bytes = max(0, available_bytes - LEN_PREFIX_BYTES - crypto_overhead - marker_bytes)
+
             text_bytes = len(text.encode('utf-8'))
             if text_bytes > max_bytes:
                 raise SteganographyError(
@@ -352,6 +380,7 @@ class SecureSteganography:
 
             # Vectorised LSB embedding
             flat = img_array.flatten().astype(np.uint8)
+            total_pixels = flat.size   # capture before reshape — reshape preserves count
             flat[:bit_count] = (flat[:bit_count] & np.uint8(0xFE)) | payload_bits
             img_array = flat.reshape(img_array.shape)
 
@@ -374,7 +403,7 @@ class SecureSteganography:
                 'output_path': output_path,
                 'text_length': len(text),
                 'encrypted': bool(self.password),
-                'capacity_used': f"{(len(payload_bytes) / (img_array.size // 8) * 100):.1f}%",
+                'capacity_used': f"{(len(payload_bytes) / (total_pixels // 8) * 100):.1f}%",
             }
 
         except SteganographyError:
@@ -392,8 +421,7 @@ class SecureSteganography:
         Called by SteganographyGUI._extract_text() and verify_integrity().
         """
         try:
-            img = self._validate_image(image_path)
-            img_array = np.array(img)
+            img, img_array = self._validate_image(image_path)
 
             flat     = img_array.flatten()
             lsb_bits = (flat & np.uint8(1)).astype(np.uint8)
@@ -493,6 +521,16 @@ class SecureSteganography:
     _B_NONCE_LEN    = 12
     _B_MIN_LEN      = 4 + 1 + 16 + 12 + 16   # magic + version + salt + nonce + tag
 
+    # Maximum bundle file size: fixed binary header (4+1+16+12+16 = 49 bytes) plus
+    # a generous ceiling for the encrypted plaintext content. The plaintext is three
+    # lines of the form "[PW]>>...\n" with a 512-char password and two 64-char markers,
+    # totalling at most ~650 bytes; 2048 bytes gives a 3x safety margin while still
+    # blocking oversized files that cannot be valid bundles.
+    _MAX_BUNDLE_SIZE = (
+        len(b'SKBX') + 1 + 16 + 12 + 16   # fixed header fields
+        + 2048                              # generous ceiling for encrypted content
+    )
+
     @staticmethod
     def _bundle_derive_key(master_password: str, salt: bytes) -> bytes:
         """
@@ -553,8 +591,10 @@ class SecureSteganography:
                 try:
                     subprocess.run(
                         ['attrib', '+h', filepath],
-                        check=False, capture_output=True
+                        check=False, capture_output=True, timeout=5
                     )
+                except subprocess.TimeoutExpired:
+                    pass   # non-critical — file is saved, hiding it just failed
                 except Exception:
                     pass
 
@@ -575,12 +615,11 @@ class SecureSteganography:
         Called by SteganographyGUI._browse_key_file().
         """
         _ERR = "Invalid key bundle or wrong master password."
-        _MAX_BUNDLE_SIZE = 4096   # key bundles are structurally < 200 bytes; 4 KB is a hard ceiling
 
         try:
             with open(filepath, 'rb') as f:
-                data = f.read(_MAX_BUNDLE_SIZE + 1)
-            if len(data) > _MAX_BUNDLE_SIZE:
+                data = f.read(SecureSteganography._MAX_BUNDLE_SIZE + 1)
+            if len(data) > SecureSteganography._MAX_BUNDLE_SIZE:
                 raise SteganographyError(_ERR)
         except SteganographyError:
             raise
@@ -641,19 +680,17 @@ class SecureSteganography:
 
 def normalize_path(path_str: str) -> str:
     """
-    Normalisiert Pfadangaben: entfernt Anführungszeichen, expandiert ~, macht absolut.
-    Wird überall aufgerufen wo Entry-Felder Pfade liefern.
+    Normalizes path strings: strips surrounding quotes, expands ~, makes absolute.
+    Returns an empty string on any error instead of the raw (potentially unsafe) input.
+    Called everywhere UI entry fields supply file paths.
     """
     if not path_str:
         return ""
-    path_str = path_str.strip()
-    if ((path_str.startswith('"') and path_str.endswith('"')) or
-            (path_str.startswith("'") and path_str.endswith("'"))):
-        path_str = path_str[1:-1]
+    path_str = path_str.strip().strip("'\"")
     try:
         return os.path.abspath(os.path.expanduser(path_str))
     except Exception:
-        return path_str
+        return ""
 
 
 def _ask_password(parent: tk.Tk, title: str, prompt: str) -> Optional[str]:
@@ -706,24 +743,24 @@ def _ask_password(parent: tk.Tk, title: str, prompt: str) -> Optional[str]:
 
 class SteganographyGUI:
     """
-    Hauptklasse für die grafische Benutzeroberfläche.
-    Kommuniziert mit Worker-Threads ausschließlich über self._gui_queue und root.after().
+    Main GUI class.
+    Communicates with worker threads exclusively via self._gui_queue and root.after().
     """
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Hide - A Secure LSB Steganography Tool v1.1")
+        self.root.title("Hide - A Secure LSB Steganography Tool v1.2.1")
         self.root.geometry("820x700")
         self.root.minsize(640, 520)
 
-        # Thread-sichere Queue für GUI-Updates aus Worker-Threads
+        # Thread-safe queue for GUI updates from worker threads
         self._gui_queue: queue.Queue = queue.Queue()
 
         self._setup_styles()
         self._init_vars()
         self._setup_ui()
 
-        # Queue-Polling starten
+        # Start queue polling
         self._poll_gui_queue()
 
     # ------------------------------------------------------------------
@@ -760,9 +797,10 @@ class SteganographyGUI:
         self.hide_end_seq_var = tk.StringVar()
         self.password_var = tk.StringVar()
         self.show_password_var = tk.BooleanVar()
-        self.char_count_var = tk.StringVar(value="0 characters")
+        self.char_count_var = tk.StringVar(value="0 bytes")
         self.capacity_var = tk.StringVar(value="Select an image to see capacity")
         self.capacity_progress_var = tk.DoubleVar(value=0)
+        self.security_indicator_var = tk.StringVar(value="")
 
         # Extract Tab
         self.extract_image_var = tk.StringVar()
@@ -802,6 +840,11 @@ class SteganographyGUI:
         self._extract_bundle_locked = False
         self._verify_bundle_locked  = False
 
+        # Cached byte capacity for the currently selected image — populated by
+        # _update_capacity_display() and read by _update_char_count() on every keystroke
+        # so no image decode happens during typing.
+        self._cached_capacity: int = 0
+
         # Status
         self.status_var = tk.StringVar(value="Ready")
         self.progress_var = tk.DoubleVar()
@@ -812,8 +855,8 @@ class SteganographyGUI:
 
     def _poll_gui_queue(self):
         """
-        Verarbeitet ausstehende GUI-Aktionen aus Worker-Threads.
-        Wird zyklisch alle 50ms vom Main-Thread via root.after() aufgerufen.
+        Processes pending GUI actions from worker threads.
+        Called cyclically every 50ms by the main thread via root.after().
         """
         try:
             while True:
@@ -825,8 +868,8 @@ class SteganographyGUI:
 
     def _schedule(self, fn, *args, **kwargs):
         """
-        Stellt eine GUI-Aktion in die Queue — sicher aus Worker-Threads aufrufbar.
-        Wird von Worker-Threads aufgerufen um tkinter-Zugriffe zu delegieren.
+        Queues a GUI action -- safe to call from worker threads.
+        Used by worker threads to delegate tkinter access to the main thread.
         """
         self._gui_queue.put(lambda: fn(*args, **kwargs))
 
@@ -913,12 +956,15 @@ class SteganographyGUI:
         self.password_entry = ttk.Entry(opts_frame, textvariable=self.password_var,
                                         show="*", font=self.default_font)
         self.password_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 4))
+        # Update security indicator whenever the password field content changes
+        self.password_var.trace_add('write', lambda *_: self._update_security_indicator())
         self.password_toggle_btn = ttk.Checkbutton(opts_frame, text="Show",
                                                    variable=self.show_password_var,
                                                    command=self._toggle_password_visibility)
         self.password_toggle_btn.grid(row=0, column=2, padx=(0, 0))
         self.hide_pw_clear_btn = ttk.Button(opts_frame, text="\u2715", width=2,
-                                            command=lambda: self.password_var.set(""))
+                                            command=lambda: [self.password_var.set(""),
+                                                            self._update_security_indicator()])
         self.hide_pw_clear_btn.grid(row=0, column=3, padx=(0, 8))
         self.key_file_btn = ttk.Button(opts_frame, text="Key File",
                                        command=lambda: self._browse_key_file('hide'))
@@ -945,8 +991,16 @@ class SteganographyGUI:
         opts_frame.columnconfigure(1, weight=2)
         opts_frame.columnconfigure(3, weight=2)
 
+        # Row 4: Hide Text button centred on its own row.
+        # Row 5: security indicator centred below the button.
         ttk.Button(hide_frame, text="Hide Text",
-                   command=self._hide_text, style="Accent.TButton").grid(row=4, column=0, pady=7)
+                   command=self._hide_text, style="Accent.TButton").grid(
+                       row=4, column=0, pady=(7, 2))
+        self.security_indicator_label = tk.Label(
+            hide_frame, textvariable=self.security_indicator_var,
+            font=("Segoe UI", 10, "bold"))
+        self.security_indicator_label.grid(row=5, column=0, pady=(0, 6))
+        self._update_security_indicator()
 
         hide_frame.columnconfigure(0, weight=1)
         hide_frame.rowconfigure(2, weight=1)
@@ -1131,7 +1185,7 @@ class SteganographyGUI:
         about_frame = ttk.LabelFrame(tools_frame, text="About", padding="6")
         about_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 6))
         about_text = (
-            "Hide - A Secure LSB Steganography Tool Version 1.1\n\n"
+            "Hide - A Secure LSB Steganography Tool Version 1.2.1\n\n"
             "> Steganography\n"
             "  \u2022  Least Significant Bit (LSB) embedding in RGB images\n"
             "  \u2022  Sequential pixel embedding - visually undetectable\n"
@@ -1157,7 +1211,7 @@ class SteganographyGUI:
             "  \u2022  Thread-safe GUI - worker threads via queue, never freezes\n"
             "  \u2022  4-byte length prefix - exact payload read, no GCM padding waste\n\n"
             "> Technologies\n"
-            "  Python 3.14.3  \u2022  tkinter  \u2022  Pillow 12.0.0  \u2022  NumPy 2.4.2  \u2022  cryptography 46.0.5"
+            "  Python 3.14.3  \u2022  tkinter  \u2022  Pillow 12.1.1  \u2022  NumPy 2.4.4  \u2022  cryptography 46.0.6"
         )
         about_text_widget = scrolledtext.ScrolledText(
             about_frame, height=6, wrap=tk.WORD,
@@ -1190,7 +1244,15 @@ class SteganographyGUI:
         Called from all tabs for non-path input fields.
         """
         frame = ttk.Frame(parent)
-        entry_kwargs = dict(textvariable=var, font=self.default_font)
+        # Limit marker fields to 256 characters — longer values provide no practical
+        # benefit and would cause excessive work in the keystroke capacity handler.
+        vcmd = (frame.register(lambda s: len(s) <= 256), '%P')
+        entry_kwargs = dict(
+            textvariable=var,
+            font=self.default_font,
+            validate='key',
+            validatecommand=vcmd,
+        )
         if show:
             entry_kwargs['show'] = show
         entry = ttk.Entry(frame, **entry_kwargs)
@@ -1206,7 +1268,7 @@ class SteganographyGUI:
         return frame
 
     def _create_status_area(self, parent):
-        """Erstellt Fortschrittsbalken und Statuszeile. Wird von _setup_ui() aufgerufen."""
+        """Creates progress bar and status bar. Called by _setup_ui()."""
         status_frame = ttk.Frame(parent)
         status_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
         self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, maximum=100)
@@ -1215,23 +1277,36 @@ class SteganographyGUI:
         status_frame.columnconfigure(0, weight=1)
 
     # ------------------------------------------------------------------
-    # Browse-Helfer
+    # Browse helpers
     # ------------------------------------------------------------------
 
     def _browse_image_to_hide(self):
-        """Öffnet Dateidialog für Quellbild (Hide-Tab). Wird vom Button aufgerufen."""
+        """Opens file dialog for source image (Hide tab). Called by button."""
         filename = filedialog.askopenfilename(
             title="Select Image",
             filetypes=[("All Images", "*.png *.jpg *.jpeg *.bmp *.gif *.tiff"),
                        ("PNG", "*.png"), ("JPEG", "*.jpg *.jpeg"),
                        ("BMP", "*.bmp"), ("All Files", "*.*")])
         if filename:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in {'.jpg', '.jpeg'}:
+                messagebox.showwarning(
+                    "Lossy source image",
+                    "JPEG uses lossy compression.\n\n"
+                    "Note: The hidden data must be saved in an output PNG, not in this file."
+                )
+            elif ext == '.webp':
+                messagebox.showwarning(
+                    "Possibly lossy source image",
+                    "WebP may use lossy compression.\n\n"
+                    "Note: The hidden data must be saved in an output PNG, not in this file."
+                )
             self.hide_image_var.set(filename)
             self._update_capacity_display()
             self._update_char_count()
 
     def _browse_image_to_extract(self):
-        """Öffnet Dateidialog für Quellbild (Extract-Tab). Wird vom Button aufgerufen."""
+        """Opens file dialog for source image (Extract tab). Called by button."""
         filename = filedialog.askopenfilename(
             title="Select Image with Hidden Data",
             filetypes=[("All Images", "*.png *.jpg *.jpeg *.bmp *.gif *.tiff"),
@@ -1240,7 +1315,7 @@ class SteganographyGUI:
             self.extract_image_var.set(filename)
 
     def _browse_output_path(self):
-        """Öffnet Speichern-Dialog für Ausgabedatei. Wird vom Button aufgerufen."""
+        """Opens save dialog for output file. Called by button."""
         filename = filedialog.asksaveasfilename(
             title="Save Output File",
             defaultextension=".png",
@@ -1249,7 +1324,7 @@ class SteganographyGUI:
             self.hide_output_var.set(filename)
 
     def _browse_capacity_image(self):
-        """Öffnet Dateidialog für Kapazitätsprüfung (Tools-Tab). Wird vom Button aufgerufen."""
+        """Opens file dialog for capacity check (Tools tab). Called by button."""
         filename = filedialog.askopenfilename(
             title="Select Image for Capacity Check",
             filetypes=[("All Images", "*.png *.jpg *.jpeg *.bmp *.gif *.tiff"),
@@ -1258,7 +1333,7 @@ class SteganographyGUI:
             self.cap_image_var.set(filename)
 
     def _browse_verify_image(self):
-        """Öffnet Dateidialog für Verifikation (Tools-Tab). Wird vom Button aufgerufen."""
+        """Opens file dialog for integrity verification (Tools tab). Called by button."""
         filename = filedialog.askopenfilename(
             title="Select Image for Verification",
             filetypes=[("All Images", "*.png *.jpg *.jpeg *.bmp *.gif *.tiff"),
@@ -1323,6 +1398,7 @@ class SteganographyGUI:
             self.key_file_btn.config(state="disabled")
             self.hide_remove_key_btn.config(state="normal")
             self._update_capacity_display()
+            self._update_security_indicator()
 
         elif context == 'extract':
             self._extract_bundle_locked = True
@@ -1376,6 +1452,7 @@ class SteganographyGUI:
             self._set_frame_entries_state(self.hide_magic_entry_frame, "normal")
             self._set_frame_entries_state(self.hide_end_entry_frame,   "normal")
             self._update_capacity_display()
+            self._update_security_indicator()
 
         elif context == 'extract':
             self._extract_bundle_locked = False
@@ -1418,7 +1495,7 @@ class SteganographyGUI:
                 pass
 
     # ------------------------------------------------------------------
-    # Toggle-Helfer
+    # Toggle helpers
     # ------------------------------------------------------------------
 
     def _toggle_password_visibility(self):
@@ -1426,23 +1503,44 @@ class SteganographyGUI:
         self.password_entry.config(show="" if self.show_password_var.get() else "*")
 
     def _toggle_decrypt_password_visibility(self):
-        """Schaltet Passwort-Sichtbarkeit im Extract-Tab um. Wird von Checkbox aufgerufen."""
+        """Toggles password visibility in Extract tab. Called by Show checkbox."""
         self.decrypt_password_entry.config(show="" if self.show_decrypt_password_var.get() else "*")
 
     # ------------------------------------------------------------------
-    # Kapazitäts- und Zeichenzähler-Logik
+    # Capacity and byte counter logic
     # ------------------------------------------------------------------
+
+    def _update_security_indicator(self):
+        """
+        Updates the coloured security label next to the Hide Text button.
+        Three states:
+          - Bundle loaded (key file)  -> green  "Secure Encryption"
+          - Manual password + markers -> orange "Less Secure -- Key File recommended"
+          - No password               -> red    "Not Encrypted"
+        Called after any change to password, markers, or bundle state.
+        """
+        if self._hide_bundle_locked:
+            text  = " Secure Encryption "
+            color = "#1a7a3a"
+        elif self.password_var.get():
+            text  = " Less Secure -- Key File recommended "
+            color = "#b05a00"
+        else:
+            text  = " Not Encrypted -- Key File or Password recommended "
+            color = "#b00020"
+        self.security_indicator_var.set(text)
+        self.security_indicator_label.config(foreground=color)
 
     def _update_char_count(self, event=None):
         """
-        Updates character counter, capacity display and progress bar.
-        Capacity is always calculated without encryption overhead to avoid
-        leaking information about whether encryption is in use.
+        Updates byte counter, capacity display and progress bar on every keystroke.
+        Uses self._cached_capacity set by _update_capacity_display() so no image
+        decode happens here — safe to call on every KeyRelease event.
         Called on KeyRelease and mouse click in the text input widget.
         """
-        text = self.hide_text_widget.get("1.0", tk.END)
-        char_count = len(text.strip())
-        count_text = f"{char_count:,} characters"
+        text = self.hide_text_widget.get("1.0", tk.END).strip()
+        byte_count = len(text.encode('utf-8'))
+        count_text = f"{byte_count:,} bytes"
 
         image_path = normalize_path(self.hide_image_var.get())
         magic_seq = self._hide_real_magic if self._hide_bundle_locked else self.hide_magic_seq_var.get()
@@ -1453,27 +1551,25 @@ class SteganographyGUI:
                 self.char_count_label.config(foreground="orange")
                 count_text += " | Please define Start Marker and End Marker"
                 self.capacity_progress.grid_remove()
-            elif char_count > 0:
+            elif byte_count > 0:
                 try:
-                    # Always calculate without encryption flag — capacity is approximate by design
-                    steg = SecureSteganography(magic_sequence=magic_seq, end_delimiter=end_seq)
-                    max_chars = steg.calculate_capacity(image_path, encrypted=False)
+                    max_bytes = self._cached_capacity
 
-                    remaining = max_chars - char_count
-                    usage_percent = (char_count / max_chars * 100) if max_chars > 0 else 100
+                    remaining = max_bytes - byte_count
+                    usage_percent = (byte_count / max_bytes * 100) if max_bytes > 0 else 100
 
                     if remaining >= 0:
                         if usage_percent >= 95:
                             count_text += (
-                                f" | ~{remaining:,} characters remaining "
-                                f"(~{usage_percent:.0f}% — close to limit)"
+                                f" | ~{remaining:,} bytes remaining "
+                                f"(~{usage_percent:.0f}% -- close to limit)"
                             )
                             self.char_count_label.config(foreground="#B8500A")
                         else:
-                            count_text += f" | ~{remaining:,} characters remaining (~{usage_percent:.0f}% used)"
+                            count_text += f" | ~{remaining:,} bytes remaining (~{usage_percent:.0f}% used)"
                             self.char_count_label.config(foreground="dark green")
                     else:
-                        count_text += f" | ~{abs(remaining):,} characters too many!"
+                        count_text += f" | ~{abs(remaining):,} bytes too many!"
                         self.char_count_label.config(foreground="red")
 
                     self.capacity_progress.grid(
@@ -1504,27 +1600,42 @@ class SteganographyGUI:
 
     def _update_capacity_display(self):
         """
-        Updates the capacity line above the text input field.
+        Updates the capacity line above the text input field and stores the result
+        in self._cached_capacity so _update_char_count() can read it without
+        re-decoding the image on every keystroke.
         Always calculates without encryption flag — capacity is approximate by design.
         Called after image selection or bundle load/clear.
         """
         image_path = normalize_path(self.hide_image_var.get())
         if not image_path or not os.path.exists(image_path):
             self.capacity_var.set("Select an image to see capacity")
+            self._cached_capacity = 0
             self._update_char_count()
             return
         try:
             magic_seq = self._hide_real_magic if self._hide_bundle_locked else self.hide_magic_seq_var.get()
             end_seq   = self._hide_real_end   if self._hide_bundle_locked else self.hide_end_seq_var.get()
             steg = SecureSteganography(magic_sequence=magic_seq, end_delimiter=end_seq)
-            max_chars = steg.calculate_capacity(image_path, encrypted=False)
-            img = Image.open(image_path)
+            # _validate_image returns (img, img_array); img.size is available from the tuple
+            img, img_array = steg._validate_image(image_path)
+            available_bytes = (img_array.shape[0] * img_array.shape[1] * 3) // 8
+            marker_bytes = 0
+            if magic_seq:
+                marker_bytes += len(magic_seq.encode('utf-8'))
+            if end_seq:
+                marker_bytes += len(end_seq.encode('utf-8'))
+            # Use actual overhead based on whether encryption is currently active
+            is_encrypted = bool(self._hide_bundle_locked or self.password_var.get())
+            crypto_overhead = GCM_OVERHEAD if is_encrypted else PLAIN_OVERHEAD
+            max_bytes = max(0, available_bytes - LEN_PREFIX_BYTES - crypto_overhead - marker_bytes)
+            self._cached_capacity = max_bytes
             self.capacity_var.set(
-                f"~{max_chars:,} characters max.  "
+                f"~{max_bytes:,} bytes max.  "
                 f"(Image: {img.size[0]}x{img.size[1]} px)"
             )
             self._update_char_count()
         except Exception as e:
+            self._cached_capacity = 0
             self.capacity_var.set(f"Error calculating capacity: {e}")
 
     # ------------------------------------------------------------------
@@ -1532,15 +1643,15 @@ class SteganographyGUI:
     # ------------------------------------------------------------------
 
     def _update_progress(self, value: float):
-        """Aktualisiert den globalen Fortschrittsbalken. Thread-sicher via _schedule()."""
+        """Updates the global progress bar. Thread-safe via _schedule()."""
         self.progress_var.set(value)
 
     def _update_status(self, message: str):
-        """Aktualisiert die Statuszeile. Thread-sicher via _schedule()."""
+        """Updates the status bar. Thread-safe via _schedule()."""
         self.status_var.set(message)
 
     # ------------------------------------------------------------------
-    # Kernoperationen (Worker-Threads)
+    # Core operations (worker threads)
     # ------------------------------------------------------------------
 
     def _hide_text(self):
@@ -1591,7 +1702,7 @@ class SteganographyGUI:
                 )
                 self._schedule(self._update_status, "Ready")
                 self._schedule(self._update_progress, 0)
-                # Textfeld nach erfolgreichem Verstecken leeren
+                # Clear text field after successful hide operation
                 self._schedule(self._clear_text)
                 self._schedule(
                     messagebox.showinfo, "Success",
@@ -1686,17 +1797,16 @@ class SteganographyGUI:
             return
         try:
             steg = SecureSteganography()
-            max_chars = steg.calculate_capacity(image_path, encrypted=False)
-            img = Image.open(image_path)
+            max_bytes, img_size = steg.calculate_capacity(image_path, encrypted=False)
             self.capacity_result_var.set(
-                f"Image: {img.size[0]}x{img.size[1]} px | "
-                f"~{max_chars:,} characters max."
+                f"Image: {img_size[0]}x{img_size[1]} px | "
+                f"~{max_bytes:,} bytes max."
             )
             messagebox.showinfo(
                 "Image Capacity",
-                f"Image: {img.size[0]}x{img.size[1]} pixels\n\n"
-                f"Approximate capacity: ~{max_chars:,} characters\n"
-                f"(~{max_chars // 1000} KB of text)"
+                f"Image: {img_size[0]}x{img_size[1]} pixels\n\n"
+                f"Approximate capacity: ~{max_bytes:,} bytes\n"
+                f"(~{max_bytes // 1000} KB of text)"
             )
         except Exception as e:
             self.capacity_result_var.set(f"Error: {e}")
@@ -1746,7 +1856,7 @@ class SteganographyGUI:
         threading.Thread(target=worker, daemon=True).start()
 
     def _clear_keygen_fields(self):
-        """Leert alle drei Key-Generator-Eingabefelder. Wird vom Button aufgerufen."""
+        """Clears all three key generator input fields. Called by button."""
         self.keygen_pw_var.set("")
         self.keygen_magic_var.set("")
         self.keygen_end_var.set("")
@@ -1762,10 +1872,8 @@ class SteganographyGUI:
         magic = SecureSteganography.generate_random_sequence()
         end   = SecureSteganography.generate_random_sequence()
 
-        attempts = 0
-        while end == magic and attempts < 10:
-            end = SecureSteganography.generate_random_sequence()
-            attempts += 1
+        # A 64-char alphanumeric sequence from a 62-symbol alphabet has a collision
+        # probability of ~(1/62^64) which is negligible; no retry loop is needed.
         if end == magic:
             messagebox.showerror("Error", "Could not generate unique markers. Please try again.")
             return
@@ -1819,11 +1927,11 @@ class SteganographyGUI:
             messagebox.showerror("Error", f"Unexpected error: {e}")
 
     # ------------------------------------------------------------------
-    # Text-Hilfsaktionen
+    # Text helper actions
     # ------------------------------------------------------------------
 
     def _load_text_file(self):
-        """Lädt eine Textdatei in das Eingabefeld. Wird vom Button aufgerufen."""
+        """Loads a text file into the input field. Called by button."""
         filename = filedialog.askopenfilename(
             title="Load Text File",
             filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
@@ -1843,10 +1951,10 @@ class SteganographyGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Error loading file: {e}")
                 return
-        messagebox.showerror("Error", "Datei konnte mit keinem unterstützten Encoding gelesen werden.")
+        messagebox.showerror("Error", "File could not be read with any supported encoding.")
 
     def _paste_from_clipboard(self):
-        """Fügt Text aus der Zwischenablage ins Eingabefeld ein. Wird vom Button aufgerufen."""
+        """Pastes text from clipboard into the input field. Called by button."""
         try:
             import pyperclip
             clipboard_text = pyperclip.paste()
@@ -1854,7 +1962,7 @@ class SteganographyGUI:
             try:
                 clipboard_text = self.root.clipboard_get()
             except tk.TclError:
-                messagebox.showwarning("Warning", "Zwischenablage ist leer oder enthält keinen Text.")
+                messagebox.showwarning("Warning", "Clipboard is empty or contains no text.")
                 return
         if clipboard_text:
             self.hide_text_widget.delete("1.0", tk.END)
@@ -1863,7 +1971,7 @@ class SteganographyGUI:
             self._update_status("Text pasted from clipboard")
 
     def _copy_extracted_to_clipboard(self):
-        """Kopiert den extrahierten Text in die Zwischenablage. Wird vom Button aufgerufen."""
+        """Copies extracted text to clipboard. Called by button."""
         text = self.extract_text_widget.get("1.0", tk.END).strip()
         if not text:
             messagebox.showwarning("Warning", "No extracted text to copy.")
@@ -1878,7 +1986,7 @@ class SteganographyGUI:
         self._update_status("Extracted text copied to clipboard")
 
     def _save_extracted_text(self):
-        """Speichert den extrahierten Text in eine Datei. Wird vom Button aufgerufen."""
+        """Saves extracted text to a file. Called by button."""
         text = self.extract_text_widget.get("1.0", tk.END).strip()
         if not text:
             messagebox.showwarning("Warning", "No text available to save.")
@@ -1896,18 +2004,18 @@ class SteganographyGUI:
                 messagebox.showerror("Error", f"Error saving: {e}")
 
     def _clear_text(self):
-        """Leert das Texteingabefeld. Wird vom Button aufgerufen."""
+        """Clears the text input field. Called by button."""
         self.hide_text_widget.delete("1.0", tk.END)
         self._update_char_count()
         self._update_status("Text field cleared")
 
 
 # ------------------------------------------------------------------
-# Einstiegspunkt
+# Entry point
 # ------------------------------------------------------------------
 
 def main():
-    """Hauptfunktion: initialisiert tkinter, setzt DPI-Awareness, startet Mainloop."""
+    """Main function: initializes tkinter, sets DPI awareness, starts mainloop."""
     root = tk.Tk()
 
     try:
@@ -1939,7 +2047,7 @@ def main():
     try:
         root.mainloop()
     except KeyboardInterrupt:
-        print("\nProgramm durch Benutzer beendet")
+        print("\nProgram terminated by user")
     except Exception as e:
         print(f"Error: {e}")
     finally:

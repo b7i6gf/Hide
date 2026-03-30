@@ -3,11 +3,11 @@
 > This is a Python program to encrypted text inside images - undetectable, authenticated, and open source.
 > Vibe coded with the help of Claude Sonnet 4.6
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)
-![License](https://img.shields.io/badge/License-GNUv3-green?style=flat-square)
-![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-orange?style=flat-square)
-![KDF](https://img.shields.io/badge/KDF-Argon2id-red?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.2-lightgrey?style=flat-square)
+[![Python](https://img.shields.io/badge/Python-3.14%2B-blue?style=flat-square&logo=python)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-GNUv3-green?style=flat-square)](https://github.com/b7i6gf/Hide/blob/main/LICENSE)
+[![Crypto](https://img.shields.io/badge/Crypto-AES--256--GCM-orange?style=flat-square)](https://cryptography.io/en/46.0.6/hazmat/primitives/symmetric-encryption/#cryptography.hazmat.primitives.ciphers.algorithms.AES256)
+[![KDF](https://img.shields.io/badge/KDF-Argon2id-red?style=flat-square)](https://cryptography.io/en/46.0.6/hazmat/primitives/symmetric-encryption/#cryptography.hazmat.primitives.ciphers.algorithms.AES256)
+[![Version](https://img.shields.io/badge/Version-1.2.1-lightgrey?style=flat-square)](https://github.com/b7i6gf/Hide/releases/tag/v1.2.1)
 
 A desktop application for hiding text inside images using **Least Significant Bit (LSB) steganography**, combined with **AES-256-GCM authenticated encryption** and **Argon2id key derivation**. The result is an image that looks identical to the original but contains an encrypted, tamper-evident hidden message.
 
@@ -62,7 +62,8 @@ A desktop application for hiding text inside images using **Least Significant Bi
 
 > 💡 Use a **Key Bundle** for maximum security - password and markers are randomly generated and stored encrypted. Load them with the **Key File** button. See below for more information!
 
-<img width="1003" height="935" alt="How to hide" src="https://github.com/user-attachments/assets/72f99b0a-729c-49c5-a73f-2eafe1aeb2cf" />
+<img width="1000" height="930" alt="image" src="https://github.com/user-attachments/assets/3bba4100-dc17-4f91-b4ed-93b0624c88b5" />
+
 
 
 ### Extracting text
@@ -86,7 +87,8 @@ A desktop application for hiding text inside images using **Least Significant Bi
 Load the bundle in any tab using the **Key File** button. The real credentials are never displayed. The **Master Passwort** must be re-entered upon use.
 
 <img width="999" height="930" alt="How to generate key" src="https://github.com/user-attachments/assets/ed5ce37d-5477-420d-9784-58f8431386ee" />
-<img width="982" height="185" alt="use key" src="https://github.com/user-attachments/assets/f475f019-04fd-4151-ada1-921ef03075da" />
+<img width="983" height="204" alt="image" src="https://github.com/user-attachments/assets/d2051a40-9c52-4dde-960e-5d6c7b1c5c69" />
+
 
 ---
 
@@ -120,9 +122,9 @@ python hide.py
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| [Pillow](https://python-pillow.org/) | ≥ 10.0 | Image loading and saving |
-| [NumPy](https://numpy.org/) | ≥ 1.24 | Vectorised bit operations |
-| [cryptography](https://cryptography.io/) | ≥ 41.0 | AES-256-GCM, Argon2id |
+| [Pillow](https://python-pillow.org/) | ≥ 12.0 | Image loading and saving |
+| [NumPy](https://numpy.org/) | ≥ 2.4 | Vectorised bit operations |
+| [cryptography](https://cryptography.io/) | ≥ 46.0 | AES-256-GCM, Argon2id |
 
 ---
 ---
